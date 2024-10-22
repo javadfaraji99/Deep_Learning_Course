@@ -1,0 +1,230 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.datasets import load_iris
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+
+class DataPreprocessor:
+    def __init__(self, x_train, y_train, x_test, y_test):
+        '''
+        initiate X and y with resampled values
+        initiate X_test and y_test with test values
+        '''
+        self.X = np.array(x_train)
+        self.y = np.array(y_train)
+        self.X_test = np.array(x_test)
+        self.y_test = np.array(y_test)
+
+    def preprocess(self):
+        self.X_train, self.X_val, self.y_train, self.y_val = train_test_split(
+            self.X, self.y, test_size=0.2, random_state=42)
+
+import numpy as np
+
+class MLP:
+    def __init__(self, input_size, hidden_size, output_size):
+        '''
+        Initiate weights with random normal numbers with mean=0 and std=0.01.
+        You need 2 weight matrices: from input to hidden and from hidden to output.
+        Initiate bias vectors with zeros.
+        '''
+        self.weights1 = np.random.normal(0, 0.01, (input_size, hidden_size))
+        self.bias1 = np.zeros((hidden_size, 1))
+        self.weights2 = np.random.normal(0, 0.01, (hidden_size, output_size))
+        self.bias2 = np.zeros((output_size, 1))
+
+
+    def sigmoid(self, x):
+        '''
+        Implement the sigmoid function.
+        '''
+        return 1 / (1 + np.exp(-x))
+
+    def sigmoid_derivative(self, x):
+        '''
+        Implement the derivative of sigmoid function.
+        '''
+        s = self.sigmoid(x)
+        return s * (1 - s)
+
+    def forward(self, X):
+        '''
+        Do the forward phase. In this phase first propagate inputs through weights and sum up with biases.
+        Then pass the results through activation function.
+        '''
+
+        # print(f"Starting forward: shape of X: {X.shape}")
+
+        self.z1 = np.matmul(self.weights1.T, X) + self.bias1
+        self.a1 = self.sigmoid(self.z1)
+        self.z2 = np.matmul(self.weights2.T, self.a1) + self.bias2
+        self.a2 = self.sigmoid(self.z2)
+        return self.a2
+
+    def backward(self, X, y, output, learning_rate):
+        '''
+        steps:
+        1. The error term for the output layer: calculated as the difference between the predicted output and the true labels (dz2).
+        2. Gradients for Output Layer Weights and Biases: gradient of the loss with respect to the weights and biases of the output layer (dw2, db2).
+        3. Hidden layer error calculation: calculated by propagating the error back through the weights of the output layer
+                                           and applying the derivative of the activation function (dz1).
+        4. Gradients for Hidden Layer Weights and Biases: gradient of the loss with respect to the weights and biases of the hidden layer (dw1, db1).
+        5. Updating Weights and Biases.
+        '''
+        m = X.shape[0]
+
+        dz2 = output - y
+        dw2 = np.dot(self.a1, dz2.T) / m
+        # print(dw2.shape)
+        db2 = np.sum(dz2, axis=1, keepdims=True) / m
+        # print(dz2.shape)
+
+        dz1 = np.dot(self.weights2, dz2) * self.sigmoid_derivative(self.z1)         # dj / dz1 = dz2 / da1 * da1/dz1
+        dw1 = np.dot(X, dz1.T) / m
+        db1 = np.sum(dz1, axis=1, keepdims=True) / m
+
+        self.weights2 -= learning_rate * dw2
+        self.bias2 -= learning_rate * db2
+
+        self.weights1 -= learning_rate * dw1
+        self.bias1 -= learning_rate * db1
+
+
+def _compute_loss(output, y):
+    m = y.shape[1]
+    loss = -1/m * np.sum(y * np.log(output) + (1 - y) * np.log(1 - output))
+    return loss
+
+def _compute_accuracy(output, y):
+    predictions = output > 0.5
+    accuracy = np.mean(predictions == y)
+    return accuracy
+
+
+
+class Trainer:
+    def __init__(self, model, X_train, y_train, X_val, y_val, epochs=100, learning_rate=0.1, batch_size=32):
+        self.model = model
+        self.X_train = X_train
+        self.y_train = y_train
+        self.X_val = X_val
+        self.y_val = y_val
+        self.epochs = epochs
+        self.learning_rate = learning_rate
+        self.batch_size = batch_size
+        self.train_losses = []
+        self.train_accuracies = []
+        self.val_losses = []
+        self.val_accuracies = []
+
+    def train(self):
+
+        m = self.X_train.shape[0]
+
+        for epoch in range(self.epochs):
+            # Shuffle the training data
+            indices = np.random.permutation(m)
+            X_shuffled = self.X_train[indices]
+            y_shuffled = self.y_train[indices]
+
+            for i in range(0, m, self.batch_size):
+                ## get the current batch data and calculate the model output. Then update the weights and biases.
+                X_batch = X_shuffled[i:i+self.batch_size]
+                y_batch = y_shuffled[i:i+self.batch_size]
+
+                output = self.model.forward(X_batch.T)
+                self.model.backward(X_batch.T, y_batch.T, output, self.learning_rate)
+
+            # Calculate train loss (BinaryCrossEntropy) and accuracy (over 0.5 is 1 else is 0)
+            train_output = self.model.forward(self.X_train.T)
+            train_loss = _compute_loss(train_output, self.y_train.T)
+            train_accuracy = _compute_accuracy(train_output, self.y_train.T)
+
+            # Calculate validation loss and accuracy
+            val_output = self.model.forward(self.X_val.T)
+            val_loss = _compute_loss(val_output, self.y_val.T)
+            val_accuracy = _compute_accuracy(val_output, self.y_val.T)
+
+            self.train_losses.append(train_loss)
+            self.train_accuracies.append(train_accuracy)
+            self.val_losses.append(val_loss)
+            self.val_accuracies.append(val_accuracy)
+
+            if (epoch + 1) % 10 == 0:
+                print(f"Epoch {epoch+1}/{self.epochs}, Train Loss: {train_loss:.4f}, Train Acc: {train_accuracy:.4f}, Val Loss: {val_loss:.4f}, Val Acc: {val_accuracy:.4f}")
+
+    def plot_results(self):
+        plt.figure(figsize=(12, 5))
+        plt.subplot(1, 2, 1)
+        plt.plot(self.train_losses, label='Train')
+        plt.plot(self.val_losses, label='Validation')
+        plt.title('Loss')
+        plt.xlabel('Epoch')
+        plt.ylabel('Loss')
+        plt.legend()
+
+        plt.subplot(1, 2, 2)
+        plt.plot(self.train_accuracies, label='Train')
+        plt.plot(self.val_accuracies, label='Validation')
+        plt.title('Accuracy')
+        plt.xlabel('Epoch')
+        plt.ylabel('Accuracy')
+        plt.legend()
+
+        plt.tight_layout()
+        plt.show()
+
+class Tester:
+    def __init__(self, model, X_test, y_test):
+        self.model = model
+        self.X_test = X_test
+        self.y_test = y_test
+
+    def test(self):
+        '''
+        first forward the test data in the trained model
+        then compute the BCE
+        then binary acc.
+        '''
+        test_output = self.model.forward(self.X_test.T)
+        test_loss = _compute_loss(test_output, self.y_test.T)
+        test_accuracy = _compute_accuracy(test_output, self.y_test.T)
+
+        print(f"Test Loss: {test_loss:.4f}, Test Accuracy: {test_accuracy:.4f}")
+
+        return test_output
+
+# Main execution
+if __name__ == "__main__":
+    # Preprocess data
+    preprocessor = DataPreprocessor(cancer_x_resampled, cancer_y_resampled, cancer_x_test, cancer_y_test)
+    preprocessor.preprocess()
+
+    # Initialize and train model
+    input_size = preprocessor.X_train.shape[1]
+    hidden_size = 10
+    output_size = 1
+
+    model = MLP(input_size, hidden_size, output_size)
+    trainer = Trainer(model, preprocessor.X_train, preprocessor.y_train,
+                      preprocessor.X_val, preprocessor.y_val,
+                      epochs=100, learning_rate=0.1, batch_size=32)
+    trainer.train()
+
+    # Plot results
+    trainer.plot_results()
+
+
+
+    # Test the model
+    tester = Tester(model, preprocessor.X_test, preprocessor.y_test)
+    test_output = tester.test()
+
+    # print(test_output.shape)
+
+    # Print some example predictions
+    print("\nExample predictions:")
+    for i in range(5):
+        true_label = np.argmax(preprocessor.y_test[i])
+        predicted_label = np.argmax(test_output[:, i])
+        print(f"True: {true_label}, Predicted: {predicted_label}")
